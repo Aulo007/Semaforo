@@ -32,7 +32,8 @@ typedef enum
     verde = 0,
     amarelo = 1,
     vermelho = 2,
-    vermelho_noturno = 3,
+    amarelo_noturno = 3,
+    desligado = 4,
 } ESTADO_SEMAFORO;
 
 typedef enum
@@ -55,9 +56,19 @@ void beep(uint pin, uint duration_ms);
 
 volatile MODO modo_atual = MODO_NORMAL;
 volatile MODO_NORMAL_TEMPO tempo_atual = tempo_verde;
-volatile int contador = 0;
+volatile int contador = 1;
 volatile ESTADO_SEMAFORO estado_semaforo = verde;
 volatile bool button_pressed = false;
+volatile uint32_t senhor_do_tempo = 0;
+volatile uint32_t tempo_agora = 0;
+
+void vSenhor_do_tempo()
+{
+    while (true)
+    {
+        senhor_do_tempo = to_ms_since_boot(get_absolute_time());
+    }
+}
 
 void vBlinkLed1Task()
 {
@@ -65,33 +76,56 @@ void vBlinkLed1Task()
     {
         if (modo_atual == MODO_NORMAL)
         {
-            acender_led_rgb_cor(COLOR_GREEN); // Verde
-            vTaskDelay(pdMS_TO_TICKS(tempo_verde));
-            estado_semaforo = amarelo;
-            acender_led_rgb_cor(COLOR_YELLOW);
-            vTaskDelay(pdMS_TO_TICKS(tempo_amarelo));
-            estado_semaforo = vermelho;
-            acender_led_rgb_cor(COLOR_RED);
-            vTaskDelay(pdMS_TO_TICKS(tempo_vermelho));
-            estado_semaforo = verde;
-        }
-        else
-        {
-            // Adicionar um pequeno delay para não sobrecarregar o processador
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-    }
-}
+            if (contador == 1)
+            {
+                acender_led_rgb_cor(COLOR_GREEN);
+                estado_semaforo = verde;
+            }
 
-void vModoNoturno()
-{
-    while (true)
-    {
+            if ((senhor_do_tempo - tempo_agora >= tempo_verde) && (estado_semaforo == verde))
+            {
+                acender_led_rgb_cor(COLOR_YELLOW);
+                estado_semaforo = amarelo;
+            }
+
+            if ((senhor_do_tempo - tempo_agora >= tempo_verde + tempo_amarelo) && (estado_semaforo == amarelo))
+            {
+                acender_led_rgb_cor(COLOR_RED);
+                estado_semaforo = vermelho;
+            }
+
+            if ((senhor_do_tempo - tempo_agora >= tempo_verde + tempo_amarelo + tempo_vermelho) && (estado_semaforo == vermelho))
+            {
+                acender_led_rgb_cor(COLOR_GREEN);
+                estado_semaforo = verde;
+                tempo_agora = senhor_do_tempo; // Atualiza o tempo
+            }
+
+            contador++;
+        }
+
         if (modo_atual == MODO_NORTURNO)
         {
-            acender_led_rgb_cor(COLOR_YELLOW); // Vermelho noturno
-            vTaskDelay(pdMS_TO_TICKS(tempo_buzzer_amarelo_noturno / 2));
-            turn_off_leds();
+            if (contador > 0)
+            {
+                acender_led_rgb_cor(COLOR_YELLOW);
+                estado_semaforo = amarelo_noturno;
+                contador = 0;
+                tempo_agora = senhor_do_tempo; // Atualiza o tempo
+            }
+
+            if ((senhor_do_tempo - tempo_agora >= tempo_buzzer_amarelo_noturno) && (estado_semaforo == amarelo_noturno))
+            {
+                turn_off_leds();
+                estado_semaforo = desligado;
+            }
+
+            if ((senhor_do_tempo - tempo_agora >= 500) && (estado_semaforo == amarelo_noturno))
+            {
+                acender_led_rgb_cor(COLOR_YELLOW);
+                estado_semaforo = amarelo_noturno;
+                tempo_agora = senhor_do_tempo; // Atualiza o tempo
+            }
         }
     }
 }
@@ -110,22 +144,18 @@ void vBlinkLed2Task()
                 break;
             case amarelo:
                 beep(BUZZER_PIN, tempo_buzzer_amarelo);
-                vTaskDelay(pdMS_TO_TICKS(tempo_buzzer_amarelo));
+                vTaskDelay(pdMS_TO_TICKS(100));
                 break;
             case vermelho:
                 beep(BUZZER_PIN, tempo_buzzer_vermelho);
                 vTaskDelay(pdMS_TO_TICKS(1500));
-                break;
-
-            default:
-                vTaskDelay(pdMS_TO_TICKS(500));
                 break;
             }
         }
         else if (modo_atual == MODO_NORTURNO)
         {
             beep(BUZZER_PIN, tempo_buzzer_amarelo_noturno);
-            vTaskDelay(pdMS_TO_TICKS(tempo_buzzer_vermelho));
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
         else
         {
@@ -215,6 +245,8 @@ int main()
     xTaskCreate(vDisplay3Task, "Cont Task Disp3", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY, NULL);
     xTaskCreate(vTrocaModo, "Troca Modo", configMINIMAL_STACK_SIZE,
+                NULL, tskIDLE_PRIORITY, NULL);
+    xTaskCreate(vSenhor_do_tempo, "Senhor do Tempo", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY, NULL);
     vTaskStartScheduler();
     panic_unsupported();
