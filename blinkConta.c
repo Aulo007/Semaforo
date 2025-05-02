@@ -106,6 +106,10 @@ volatile ModoOperacao modo_atual = MODO_NORMAL;
 volatile EstadoSemaforo estado_atual = ESTADO_VERDE;
 volatile uint8_t contador_ciclo = 1; // Contador para reiniciar o ciclo
 volatile uint8_t contador_ciclo_bitmaps = 1;
+volatile uint8_t contador_ciclo_imagens_verde = 0;
+volatile uint8_t contador_ciclo_imagens_vermelho = 10;
+volatile uint8_t contador_ciclo_imagens = 0;
+volatile bool amarelo_noturno_matriz = false;
 
 // Variáveis de temporização
 volatile uint32_t tempo_global = 0;         // Contador de tempo global
@@ -114,7 +118,8 @@ volatile uint32_t tempo_ultimo_botao = 0;   // Momento do último pressionamento
 volatile uint32_t tempo_ultimo_beep = 0;    // Momento do último beep do buzzer
 volatile uint32_t tempo_ultimo_bitmap = 0;  // Momento do último bitmap desenhado
 volatile uint32_t tempo_ultima_imagem = 0;  // Momento da última imagem desenhada
-volatile bool buzzer_ativo = false;         // Estado atual do buzzer
+
+volatile bool buzzer_ativo = false; // Estado atual do buzzer
 
 // Protótipos de funções
 void inicializar_buzzer(uint pino);
@@ -150,7 +155,8 @@ void vTarefaControleSemaforo()
     Em suma, esta é a tarefa responsável pelos leds também, não foi especificdo na tarefa, vi umas
     pessoas comentando que tinha quer ser um periférico por task, isso quando já terminei o c[odigo, o meu
     segue esta regra, porém não deixei muito exclusivo, por exemplo, esta é a tarefa responsável pelos leds, e aqui
-    eu acendo os leds correspondentes!
+    eu acendo os leds correspondentes!. O que na verdade me limitou com o quesito da matriz, já que eu poderia fazer a animação aqui
+    e ficaria tudo sincronizado...
     */
     while (true)
     {
@@ -379,40 +385,17 @@ void vTarefaControleDisplay()
         {
         case ESTADO_VERDE:
 
-            if (contador_ciclo_bitmaps == 1)
+            if ((tempo_global - tempo_ultimo_bitmap >= 200))
             {
-                // Desenha a imagem do semáforo verde
-                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[0], 128, 64);
-                contador_ciclo_bitmaps = 2;
-                tempo_ultima_imagem = tempo_global;
+                // Desenha a imagem atual
+                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[contador_ciclo_bitmaps], 128, 64);
                 ssd1306_send_data(&display);
-            }
 
-            if ((tempo_global - tempo_ultima_imagem >= 200) && (contador_ciclo_bitmaps == 2))
-            {
-                // Desenha a imagem do semáforo verde
-                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[1], 128, 64);
-                contador_ciclo_bitmaps = 3;
-                tempo_ultima_imagem = tempo_global;
-                ssd1306_send_data(&display);
-            }
+                // Atualiza o tempo do último bitmap
+                tempo_ultimo_bitmap = tempo_global;
 
-            if ((tempo_global - tempo_ultima_imagem >= 200) && (contador_ciclo_bitmaps == 3))
-            {
-                // Desenha a imagem do semáforo verde
-                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[2], 128, 64);
-                contador_ciclo_bitmaps = 4;
-                tempo_ultima_imagem = tempo_global;
-                ssd1306_send_data(&display);
-            }
-
-            if ((tempo_global - tempo_ultima_imagem >= 200) && (contador_ciclo_bitmaps == 4))
-            {
-                // Desenha a imagem do semáforo verde
-                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[3], 128, 64);
-                contador_ciclo_bitmaps = 1;
-                tempo_ultima_imagem = tempo_global;
-                ssd1306_send_data(&display);
+                // Avança para a próxima imagem (com loop circular)
+                contador_ciclo_bitmaps = (contador_ciclo_bitmaps + 1) % 4;
             }
 
             break;
@@ -440,14 +423,100 @@ void vTarefaControleDisplay()
 
 void vTarefaControleMatriz()
 {
-    npInit(7); // Inicializa a matriz de LEDs RGB no pino 7
-
+    // Inicializa a matriz de LEDs RGB no pino 7
+    npInit(7);
+    
+    // Inicializa contadores para evitar problemas de memória
+    contador_ciclo_imagens = 0;
+    contador_ciclo_imagens_verde = 0;
+    contador_ciclo_imagens_vermelho = 10;
+    
     while (true)
     {
-        continue;
+        switch (estado_atual)
+        {
+        case ESTADO_VERDE:
+            // Limpa a matriz ao entrar no estado verde pela primeira vez
+            if (contador_ciclo_imagens != 0)
+            {
+                npClear();
+                contador_ciclo_imagens = 0;
+            }
+            
+            // Exibe o frame atual da animação verde
+            npSetMatrixWithIntensity(caixa_de_desenhos[contador_ciclo_imagens_verde], 1);
+            
+            // Avança para o próximo frame da animação, ciclo de 0-9
+            contador_ciclo_imagens_verde = (contador_ciclo_imagens_verde + 1) % 10;
+            
+            // Aguarda antes do próximo frame
+            vTaskDelay(pdMS_TO_TICKS(38));
+            break;
+            
+        case ESTADO_AMARELO:
+            // Limpa a matriz ao entrar no estado amarelo pela primeira vez
+            if (contador_ciclo_imagens != 1)
+            {
+                npClear();
+                contador_ciclo_imagens = 1;
+            }
+            
+            vTaskDelay(pdMS_TO_TICKS(38));
+            npSetMatrixWithIntensity(caixa_de_desenhos[22], 1);
+            
+            // Aguarda antes da próxima atualização
+            vTaskDelay(pdMS_TO_TICKS(38));
+            break;
+            
+        case ESTADO_VERMELHO:
+            // Limpa a matriz ao entrar no estado vermelho pela primeira vez
+            if (contador_ciclo_imagens != 2)
+            {
+                npClear();
+                contador_ciclo_imagens = 2;
+            }
+            
+            // Exibe o frame atual da animação vermelha
+            npSetMatrixWithIntensity(caixa_de_desenhos[contador_ciclo_imagens_vermelho], 1);
+            
+            // Avança para o próximo frame da animação, ciclo de 10-22
+            contador_ciclo_imagens_vermelho++;
+            if (contador_ciclo_imagens_vermelho >= 22)
+                contador_ciclo_imagens_vermelho = 10;
+            
+            // Aguarda antes do próximo frame
+            vTaskDelay(pdMS_TO_TICKS(38));
+            break;
+            
+        case ESTADO_AMARELO_NOTURNO:
+            // Limpa a matriz ao entrar no estado noturno pela primeira vez
+            if (contador_ciclo_imagens != 3)
+            {
+                npClear();
+                contador_ciclo_imagens = 3;
+            }
+            
+            // Sincroniza com o estado do LED amarelo
+            // Em ESTADO_AMARELO_NOTURNO o LED estará aceso
+            npSetMatrixWithIntensity(caixa_de_desenhos[22], 1);
+            vTaskDelay(pdMS_TO_TICKS(38));
+            break;
+            
+        case ESTADO_DESLIGADO:
+            // No modo noturno quando o LED está desligado
+            // Garantimos que a matriz também esteja desligada
+            npClear();
+            vTaskDelay(pdMS_TO_TICKS(38));
+            break;
+            
+        default:
+            // Caso de segurança para estados desconhecidos
+            npClear();
+            vTaskDelay(pdMS_TO_TICKS(38));
+            break;
+        }
     }
 }
-
 
 /**
  * @brief Task para monitoramento do botão de troca de modo
@@ -578,6 +647,9 @@ int main()
                 NULL, tskIDLE_PRIORITY, NULL);
 
     xTaskCreate(vTarefaControleDisplay, "Controle do Display", configMINIMAL_STACK_SIZE,
+                NULL, tskIDLE_PRIORITY, NULL);
+
+    xTaskCreate(vTarefaControleMatriz, "Controle da Matriz", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY, NULL);
 
     xTaskCreate(vTarefaMonitoramentoBotao, "Monitoramento do Botao", configMINIMAL_STACK_SIZE,

@@ -214,7 +214,7 @@ void npFillIntensity(npColor_t color, float intensity);
  * @param matrix Matriz 5x5 contendo as cores para cada posição
  * @param intensity Intensidade a ser aplicada a todas as cores (0.0 - 1.0)
  */
-void npSetMatrixWithIntensity(const npColor_t matrix[NP_MATRIX_HEIGHT][NP_MATRIX_WIDTH], float intensity);
+void npSetMatrixWithIntensity(int matriz[NP_MATRIX_HEIGHT][NP_MATRIX_WIDTH][3], float intensity);
 
 /**
  * @brief Reproduz uma sequência de frames como uma animação
@@ -224,8 +224,8 @@ void npSetMatrixWithIntensity(const npColor_t matrix[NP_MATRIX_HEIGHT][NP_MATRIX
  * @param frames Array de matrizes 5x5 representando cada frame
  * @param intensity Intensidade a ser aplicada a todas as cores (0.0 - 1.0)
  */
-void npAnimateFrames(int period, int num_frames, 
-                    const npColor_t frames[num_frames][NP_MATRIX_HEIGHT][NP_MATRIX_WIDTH], 
-                    float intensity);
+void npAnimateFrames(int period, int num_frames,
+                     int matriz[num_frames][NP_MATRIX_HEIGHT][NP_MATRIX_WIDTH][3],
+                     float intensity);
 
 #endif /* MATRIZ_RGB_H_ */
