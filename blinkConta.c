@@ -29,6 +29,8 @@
 #include "hardware/adc.h"
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
+#include "extras/bitmaps.h"
+#include "extras/Desenho.h"
 
 /**
  * Definição de constantes e pinos
@@ -103,12 +105,15 @@ typedef enum
 volatile ModoOperacao modo_atual = MODO_NORMAL;
 volatile EstadoSemaforo estado_atual = ESTADO_VERDE;
 volatile uint8_t contador_ciclo = 1; // Contador para reiniciar o ciclo
+volatile uint8_t contador_ciclo_bitmaps = 1;
 
 // Variáveis de temporização
 volatile uint32_t tempo_global = 0;         // Contador de tempo global
 volatile uint32_t tempo_ultima_mudanca = 0; // Momento da última mudança de estado
 volatile uint32_t tempo_ultimo_botao = 0;   // Momento do último pressionamento do botão
 volatile uint32_t tempo_ultimo_beep = 0;    // Momento do último beep do buzzer
+volatile uint32_t tempo_ultimo_bitmap = 0;  // Momento do último bitmap desenhado
+volatile uint32_t tempo_ultima_imagem = 0;  // Momento da última imagem desenhada
 volatile bool buzzer_ativo = false;         // Estado atual do buzzer
 
 // Protótipos de funções
@@ -122,7 +127,7 @@ void desativar_buzzer(uint pino);
  * Esta tarefa mantém um contador de tempo global que é usado por outras tarefas
  * para coordenar mudanças de estado e ações sincronizadas.
  */
-void tarefa_contador_tempo()
+void vTarefaContadorTempo()
 {
     while (true)
     {
@@ -136,7 +141,7 @@ void tarefa_contador_tempo()
  * Esta tarefa gerencia os estados do semáforo e as transições entre eles,
  * com base no modo atual (normal ou noturno).
  */
-void tarefa_controle_semaforo()
+void vTarefaControleSemaforo()
 {
     while (true)
     {
@@ -216,7 +221,7 @@ void tarefa_controle_semaforo()
  * com os estados do semáforo, usando o sistema de temporização
  * baseado no tempo global.
  */
-void tarefa_controle_buzzer()
+void vTarefaControleBuzzer()
 {
     // Inicializa variáveis de controle
     tempo_ultimo_beep = tempo_global;
@@ -331,7 +336,7 @@ void tarefa_controle_buzzer()
  * Esta tarefa atualiza o display OLED periodicamente com
  * informações sobre o estado atual do semáforo.
  */
-void tarefa_controle_display()
+void vTarefaControleDisplay()
 {
     // Inicialização do I2C
     i2c_init(I2C_PORT, 400 * 1000); // Configuração para 400kHz
@@ -354,50 +359,72 @@ void tarefa_controle_display()
 
     char buffer_info[64]; // Buffer para informações do display
 
+    // Inicializa variáveis de controle
+    tempo_ultimo_bitmap = tempo_global;
+
     while (true)
     {
-        npSetRowIntensity(0, COLOR_ORANGE, 1); // Acende a primeira linha em vermelho
 
-        // Limpa o display
-        ssd1306_fill(&display, false);
-
-        // Nome do projeto/autor
-        ssd1306_draw_string(&display, "Semaforo", 30, 5);
-
-        // Estado atual do semáforo
-        const char *estado_texto;
         switch (estado_atual)
         {
         case ESTADO_VERDE:
-            estado_texto = "Verde";
+
+            if (contador_ciclo_bitmaps == 1)
+            {
+                // Desenha a imagem do semáforo verde
+                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[0], 128, 64);
+                contador_ciclo_bitmaps = 2;
+                tempo_ultima_imagem = tempo_global;
+                ssd1306_send_data(&display);
+            }
+
+            if ((tempo_global - tempo_ultima_imagem >= 200) && (contador_ciclo_bitmaps == 2))
+            {
+                // Desenha a imagem do semáforo verde
+                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[1], 128, 64);
+                contador_ciclo_bitmaps = 3;
+                tempo_ultima_imagem = tempo_global;
+                ssd1306_send_data(&display);
+            }
+
+            if ((tempo_global - tempo_ultima_imagem >= 200) && (contador_ciclo_bitmaps == 3))
+            {
+                // Desenha a imagem do semáforo verde
+                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[2], 128, 64);
+                contador_ciclo_bitmaps = 4;
+                tempo_ultima_imagem = tempo_global;
+                ssd1306_send_data(&display);
+            }
+
+            if ((tempo_global - tempo_ultima_imagem >= 200) && (contador_ciclo_bitmaps == 4))
+            {
+                // Desenha a imagem do semáforo verde
+                ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[3], 128, 64);
+                contador_ciclo_bitmaps = 1;
+                tempo_ultima_imagem = tempo_global;
+                ssd1306_send_data(&display);
+            }
+
             break;
         case ESTADO_AMARELO:
-            estado_texto = "Amarelo";
+            ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[4], 128, 64);
+            ssd1306_send_data(&display);
             break;
         case ESTADO_VERMELHO:
-            estado_texto = "Vermelho";
+            ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[5], 128, 64);
+            ssd1306_send_data(&display);
             break;
         case ESTADO_AMARELO_NOTURNO:
+            ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[4], 128, 64);
+            ssd1306_send_data(&display);
+            break;
         case ESTADO_DESLIGADO:
-            estado_texto = "Piscante";
+            ssd1306_draw_bitmap(&display, 0, 0, semaforo_images[4], 128, 64);
+            ssd1306_send_data(&display);
             break;
         default:
-            estado_texto = "Desconhecido";
             break;
         }
-
-        // Modo atual de operação
-        const char *modo_texto = (modo_atual == MODO_NORMAL) ? "Normal" : "Noturno";
-
-        // Formata e exibe as informações
-        ssd1306_draw_string(&display, modo_texto, 30, 25);
-        ssd1306_draw_string(&display, estado_texto, 30, 45);
-
-        // Envia os dados para o display
-        ssd1306_send_data(&display);
-
-        // Atualização a cada 1 segundo
-        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -407,7 +434,7 @@ void tarefa_controle_display()
  * Esta tarefa verifica o estado do botão e alterna entre os modos
  * normal e noturno quando o botão é pressionado.
  */
-void tarefa_monitoramento_botao()
+void vTarefaMonitoramentoBotao()
 {
     while (true)
     {
@@ -524,19 +551,19 @@ int main()
     npInit(7);  // Inicializa a matriz de LEDs RGB no pino 7
 
     // Cria as tarefas do sistema - mantendo a estrutura original do FreeRTOS
-    xTaskCreate(tarefa_contador_tempo, "Contador de Tempo", configMINIMAL_STACK_SIZE,
+    xTaskCreate(vTarefaContadorTempo, "Contador de Tempo", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY, NULL);
 
-    xTaskCreate(tarefa_controle_semaforo, "Controle do Semaforo", configMINIMAL_STACK_SIZE,
+    xTaskCreate(vTarefaControleSemaforo, "Controle do Semaforo", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY, NULL);
 
-    xTaskCreate(tarefa_controle_buzzer, "Controle do Buzzer", configMINIMAL_STACK_SIZE,
+    xTaskCreate(vTarefaControleBuzzer, "Controle do Buzzer", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY, NULL);
 
-    xTaskCreate(tarefa_controle_display, "Controle do Display", configMINIMAL_STACK_SIZE,
+    xTaskCreate(vTarefaControleDisplay, "Controle do Display", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY, NULL);
 
-    xTaskCreate(tarefa_monitoramento_botao, "Monitoramento do Botao", configMINIMAL_STACK_SIZE,
+    xTaskCreate(vTarefaMonitoramentoBotao, "Monitoramento do Botao", configMINIMAL_STACK_SIZE,
                 NULL, tskIDLE_PRIORITY, NULL);
 
     // Inicia o scheduler do FreeRTOS

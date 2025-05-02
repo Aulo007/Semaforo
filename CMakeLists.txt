@@ -35,6 +35,8 @@ add_executable(${PROJECT_NAME}
     blinkConta.c
     lib/ssd1306.c
     lib/leds.c
+    extras/bitmaps.c
+    extras/Desenho.c/
     lib/matrizRGB.c # Biblioteca para o display OLED
 )
 
