@@ -143,6 +143,15 @@ void vTarefaContadorTempo()
  */
 void vTarefaControleSemaforo()
 {
+
+    led_init(); // Inicializa os LEDs
+
+    /*
+    Em suma, esta é a tarefa responsável pelos leds também, não foi especificdo na tarefa, vi umas
+    pessoas comentando que tinha quer ser um periférico por task, isso quando já terminei o c[odigo, o meu
+    segue esta regra, porém não deixei muito exclusivo, por exemplo, esta é a tarefa responsável pelos leds, e aqui
+    eu acendo os leds correspondentes!
+    */
     while (true)
     {
         if (modo_atual == MODO_NORMAL)
@@ -223,6 +232,7 @@ void vTarefaControleSemaforo()
  */
 void vTarefaControleBuzzer()
 {
+    inicializar_buzzer(BUZZER_PIN); // Inicializa o buzzer no pino especificado
     // Inicializa variáveis de controle
     tempo_ultimo_beep = tempo_global;
     buzzer_ativo = false;
@@ -428,6 +438,17 @@ void vTarefaControleDisplay()
     }
 }
 
+void vTarefaControleMatriz()
+{
+    npInit(7); // Inicializa a matriz de LEDs RGB no pino 7
+
+    while (true)
+    {
+        continue;
+    }
+}
+
+
 /**
  * @brief Task para monitoramento do botão de troca de modo
  *
@@ -436,6 +457,15 @@ void vTarefaControleDisplay()
  */
 void vTarefaMonitoramentoBotao()
 {
+
+    // Inicialização dos pinos de botões
+    gpio_init(BOTAO_MODO);
+    gpio_init(BOTAO_RESET);
+    gpio_set_dir(BOTAO_MODO, GPIO_IN);
+    gpio_set_dir(BOTAO_RESET, GPIO_IN);
+    gpio_pull_up(BOTAO_MODO);
+    gpio_pull_up(BOTAO_RESET);
+
     while (true)
     {
         // Verifica se já passou o tempo de debounce desde o último pressionamento
@@ -534,21 +564,8 @@ int main()
     // Inicialização do sistema
     stdio_init_all();
 
-    // Inicialização dos pinos de botões
-    gpio_init(BOTAO_MODO);
-    gpio_init(BOTAO_RESET);
-    gpio_set_dir(BOTAO_MODO, GPIO_IN);
-    gpio_set_dir(BOTAO_RESET, GPIO_IN);
-    gpio_pull_up(BOTAO_MODO);
-    gpio_pull_up(BOTAO_RESET);
-
     // Configura interrupção para o botão de reset
     gpio_set_irq_enabled_with_callback(BOTAO_RESET, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
-
-    // Inicialização dos periféricos
-    inicializar_buzzer(BUZZER_PIN);
-    led_init(); // Inicializa os LEDs
-    npInit(7);  // Inicializa a matriz de LEDs RGB no pino 7
 
     // Cria as tarefas do sistema - mantendo a estrutura original do FreeRTOS
     xTaskCreate(vTarefaContadorTempo, "Contador de Tempo", configMINIMAL_STACK_SIZE,
