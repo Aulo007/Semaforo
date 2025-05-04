@@ -42,7 +42,7 @@
 #define BUZZER_PIN 21         // Pino do buzzer
 #define BUZZER_FREQUENCY 100  // Frequência base do buzzer em Hz
 #define BOTAO_MODO 5          // Botão para troca de modo (A)
-#define BOTAO_RESET 6         // Botão para reset (B)
+#define BOTAO_RESET 6         // Botão para reset (B)3
 #define DEBOUNCE_DELAY_MS 300 // Tempo de debounce para o botão em ms
 
 /**

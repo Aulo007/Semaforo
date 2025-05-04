@@ -5,8 +5,8 @@
  * Esta implementação utiliza o hardware PIO do Raspberry Pi Pico para
  * controlar uma matriz de LEDs WS2812B (NeoPixels).
  *
- * @author [Seu Nome]
- * @date [Data]
+ * @author [Aulo Cezar]
+ * @date [01/05/2025]
  */
 
 #include "matrizRGB.h"
