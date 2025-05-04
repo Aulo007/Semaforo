@@ -1,5 +1,0 @@
-build
-.vscode
-pico_sdk_import.cmake
-c
-.gitattibutes
