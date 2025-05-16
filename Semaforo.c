@@ -12,6 +12,7 @@
 #include "lib/ssd1306.h"
 #include "lib/matrizRGB.h"
 #include "buzzer.h"
+#include "extras/Desenho.h"
 
 #define ADC_JOYSTICK_X 26
 #define ADC_JOYSTICK_Y 27
@@ -32,10 +33,14 @@ volatile int cont = 0;
 
 #define BUZZER_PIN 21 // Pino do buzzer
 
+volatile int contador = 10;
+
 // Função para controlar estado em que o sistema se encontra.
 volatile uint8_t mode = 0;
 
 QueueHandle_t xQueueJoystickData;
+QueueHandle_t xQueueSensorDataDisplay;
+QueueHandle_t xQueueSensorDataMatriz;
 
 void gpio_irq_handler(uint gpio, uint32_t events)
 {
@@ -48,12 +53,17 @@ typedef struct
     uint16_t y_pos;
 } joystick_data_t;
 
+typedef struct
+{
+    float water_level;
+    float rain_level;
+} sensor_data_t;
+
 void vManagerTask(void *params);
 void vJoystickTask(void *params);
 void vConvertTask(void *params);
 void vDisplayControlTask(void *params);
 void vMatrizControlTask(void *params);
-void vBuzzerControlTask(void *params);
 
 int main()
 {
@@ -68,6 +78,8 @@ int main()
 
     // Cria a fila para compartilhamento de valor do joystick
     xQueueJoystickData = xQueueCreate(10, sizeof(joystick_data_t));
+    xQueueSensorDataDisplay = xQueueCreate(10, sizeof(sensor_data_t));
+    xQueueSensorDataMatriz = xQueueCreate(10, sizeof(sensor_data_t));
 
     // Criação das tasks
     xTaskCreate(vManagerTask, "Manager Task", 256, NULL, 1, NULL);
@@ -75,7 +87,7 @@ int main()
     xTaskCreate(vConvertTask, "Convert Task", 256, NULL, 1, NULL);
     xTaskCreate(vDisplayControlTask, "Display Control Task", 256, NULL, 1, NULL);
     xTaskCreate(vMatrizControlTask, "Matriz Control Task", 256, NULL, 1, NULL);
-    xTaskCreate(vBuzzerControlTask, "Buzzer Control Task", 256, NULL, 1, NULL);
+
     // Inicia o agendador
     vTaskStartScheduler();
     panic_unsupported();
@@ -139,7 +151,6 @@ void vJoystickTask(void *params)
         //        joystick_data.y_pos);
 
         xQueueSend(xQueueJoystickData, &joystick_data, portMAX_DELAY);
-        vTaskDelay(pdMS_TO_TICKS(200));
     }
 }
 
@@ -154,19 +165,20 @@ float map_joystick_to_percentage(int value, int min, int center, int max)
 void vConvertTask(void *params)
 {
 
-    float water_level = 0.0f;
-    float rain_level = 0.0f;
+    sensor_data_t sensor_data;
 
     while (true)
     {
         joystick_data_t joystick_data;
         xQueueReceive(xQueueJoystickData, &joystick_data, portMAX_DELAY);
-        water_level = map_joystick_to_percentage(joystick_data.y_pos, MIN_JOYSTICK_VALUE, Center_Joystick_Y, MAX_JOYSTICK_VALUE);
-        rain_level = map_joystick_to_percentage(joystick_data.x_pos, MIN_JOYSTICK_VALUE, Center_Joystick_X, MAX_JOYSTICK_VALUE);
+        sensor_data.water_level = map_joystick_to_percentage(joystick_data.y_pos, MIN_JOYSTICK_VALUE, Center_Joystick_Y, MAX_JOYSTICK_VALUE);
+        sensor_data.rain_level = map_joystick_to_percentage(joystick_data.x_pos, MIN_JOYSTICK_VALUE, Center_Joystick_X, MAX_JOYSTICK_VALUE);
         printf("[Tarefa: %s] Nível de água: %.2f%%, Nível de chuva: %.2f%%\n",
                pcTaskGetName(NULL),
-               water_level,
-               rain_level);
+               sensor_data.water_level,
+               sensor_data.rain_level);
+        xQueueSend(xQueueSensorDataDisplay, &sensor_data, portMAX_DELAY);
+        xQueueSend(xQueueSensorDataMatriz, &sensor_data, portMAX_DELAY);
     }
 }
 
@@ -192,32 +204,49 @@ void vDisplayControlTask(void *params)
     ssd1306_send_data(&display);
 
     char buffer_info[64]; // Buffer para informações do display
+    sensor_data_t sensor_data;
 
-    while (true)
+    absolute_time_t repeat_time = make_timeout_time_ms(50); // 1 segundo
+
+    while (xQueueReceive(xQueueSensorDataDisplay, &sensor_data, portMAX_DELAY) == pdPASS) //
     {
-        ssd1306_draw_string(&display, "Oi, eu sou o display", 0, 0); // para debbug
-        ssd1306_send_data(&display);
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (time_reached(repeat_time))
+        {
+            repeat_time = make_timeout_time_ms(50); // Atualiza o tempo de repetição
+            sprintf(buffer_info, "Agua: %.1f%%", sensor_data.water_level);
+            ssd1306_draw_string(&display, buffer_info, 0, 0);
+
+            sprintf(buffer_info, "Chuva: %.1f%%", sensor_data.rain_level);
+            ssd1306_draw_string(&display, buffer_info, 0, 20);
+
+            ssd1306_send_data(&display);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
 void vMatrizControlTask(void *params)
 {
-    npInit(7); // Inicializa a matriz de LEDs RGB no pino 7
-    while (true)
-    {
-        npSetRow(0, COLOR_VIOLET);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
+    // Inicializa a matriz RGB
+    npInit(7);
 
-void vBuzzerControlTask(void *params)
-{
-    inicializar_buzzer(BUZZER_PIN); // Inicializa o buzzer no pino definido
-    while (true)
+    sensor_data_t sensor_data;
+
+    while (xQueueReceive(xQueueSensorDataMatriz, &sensor_data, portMAX_DELAY) == pdPASS)
     {
-        ativar_buzzer(BUZZER_PIN);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        desativar_buzzer(BUZZER_PIN);
+        if (sensor_data.water_level >= 70.0f || sensor_data.rain_level >= 80.0f)
+        {
+            npSetMatrixWithIntensity(caixa_de_desenhos[contador], 1); // Exibe imagem de alerta
+
+            contador++;
+            if (contador >= 22)
+                contador = 10;
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        else
+        {
+            npClear();
+        }
     }
 }
