@@ -60,7 +60,6 @@ typedef struct
     float rain_level;
 } sensor_data_t;
 
-void vManagerTask(void *params);
 void vJoystickTask(void *params);
 void vConvertTask(void *params);
 void vDisplayControlTask(void *params);
@@ -85,7 +84,6 @@ int main()
     xQueueSensorDataBuzzer = xQueueCreate(10, sizeof(sensor_data_t));
 
     // Criação das tasks
-    xTaskCreate(vManagerTask, "Manager Task", 256, NULL, 1, NULL);
     xTaskCreate(vJoystickTask, "Joystick Task", 256, NULL, 1, NULL);
     xTaskCreate(vConvertTask, "Convert Task", 256, NULL, 1, NULL);
     xTaskCreate(vDisplayControlTask, "Display Control Task", 256, NULL, 1, NULL);
