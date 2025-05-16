@@ -41,6 +41,7 @@ volatile uint8_t mode = 0;
 QueueHandle_t xQueueJoystickData;
 QueueHandle_t xQueueSensorDataDisplay;
 QueueHandle_t xQueueSensorDataMatriz;
+QueueHandle_t xQueueSensorDataBuzzer;
 
 void gpio_irq_handler(uint gpio, uint32_t events)
 {
@@ -64,6 +65,7 @@ void vJoystickTask(void *params);
 void vConvertTask(void *params);
 void vDisplayControlTask(void *params);
 void vMatrizControlTask(void *params);
+void vBuzzerControlTask(void *params);
 
 int main()
 {
@@ -80,6 +82,7 @@ int main()
     xQueueJoystickData = xQueueCreate(10, sizeof(joystick_data_t));
     xQueueSensorDataDisplay = xQueueCreate(10, sizeof(sensor_data_t));
     xQueueSensorDataMatriz = xQueueCreate(10, sizeof(sensor_data_t));
+    xQueueSensorDataBuzzer = xQueueCreate(10, sizeof(sensor_data_t));
 
     // Criação das tasks
     xTaskCreate(vManagerTask, "Manager Task", 256, NULL, 1, NULL);
@@ -87,6 +90,7 @@ int main()
     xTaskCreate(vConvertTask, "Convert Task", 256, NULL, 1, NULL);
     xTaskCreate(vDisplayControlTask, "Display Control Task", 256, NULL, 1, NULL);
     xTaskCreate(vMatrizControlTask, "Matriz Control Task", 256, NULL, 1, NULL);
+    xTaskCreate(vBuzzerControlTask, "Buzzer Control Task", 256, NULL, 1, NULL);
 
     // Inicia o agendador
     vTaskStartScheduler();
@@ -250,3 +254,22 @@ void vMatrizControlTask(void *params)
         }
     }
 }
+
+void vBuzzerControlTask(void *params)
+{
+    inicializar_buzzer(BUZZER_PIN); // Inicializa o buzzer no pino especificado
+    sensor_data_t sensor_data;
+
+    while (xQueueReceive(xQueueSensorDataMatriz, &sensor_data, portMAX_DELAY) == pdPASS)
+    {
+        if (sensor_data.water_level >= 70.0f || sensor_data.rain_level >= 80.0f)
+        {
+            ativar_buzzer(BUZZER_PIN); // Ativa o buzzer
+        }
+        else
+        {
+            desativar_buzzer(BUZZER_PIN); // Desativa o buzzer
+        }
+    }
+}
+  
