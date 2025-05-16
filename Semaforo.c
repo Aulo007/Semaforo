@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include "pico/time.h"
 #include "hardware/timer.h"
+#include "lib/ssd1306.h"
+#include "lib/matrizRGB.h"
+#include "buzzer.h"
 
 #define ADC_JOYSTICK_X 26
 #define ADC_JOYSTICK_Y 27
@@ -21,6 +24,13 @@
 volatile int Center_Joystick_Y = 0;
 volatile int Center_Joystick_X = 0;
 volatile int cont = 0;
+
+#define I2C_PORT i2c1     // Porta I2C utilizada
+#define I2C_SDA 14        // Pino de dados SDA
+#define I2C_SCL 15        // Pino de clock SCL
+#define DISPLAY_ADDR 0x3C // Endereço I2C do display OLED
+
+#define BUZZER_PIN 21 // Pino do buzzer
 
 // Função para controlar estado em que o sistema se encontra.
 volatile uint8_t mode = 0;
@@ -41,6 +51,9 @@ typedef struct
 void vManagerTask(void *params);
 void vJoystickTask(void *params);
 void vConvertTask(void *params);
+void vDisplayControlTask(void *params);
+void vMatrizControlTask(void *params);
+void vBuzzerControlTask(void *params);
 
 int main()
 {
@@ -60,6 +73,9 @@ int main()
     xTaskCreate(vManagerTask, "Manager Task", 256, NULL, 1, NULL);
     xTaskCreate(vJoystickTask, "Joystick Task", 256, NULL, 1, NULL);
     xTaskCreate(vConvertTask, "Convert Task", 256, NULL, 1, NULL);
+    xTaskCreate(vDisplayControlTask, "Display Control Task", 256, NULL, 1, NULL);
+    xTaskCreate(vMatrizControlTask, "Matriz Control Task", 256, NULL, 1, NULL);
+    xTaskCreate(vBuzzerControlTask, "Buzzer Control Task", 256, NULL, 1, NULL);
     // Inicia o agendador
     vTaskStartScheduler();
     panic_unsupported();
@@ -151,5 +167,57 @@ void vConvertTask(void *params)
                pcTaskGetName(NULL),
                water_level,
                rain_level);
+    }
+}
+
+void vDisplayControlTask(void *params)
+{
+    // Inicialização do I2C
+    i2c_init(I2C_PORT, 400 * 1000); // Configuração para 400kHz
+
+    // Configuração dos pinos I2C
+    gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA);
+    gpio_pull_up(I2C_SCL);
+
+    // Inicialização do display OLED
+    ssd1306_t display;
+    ssd1306_init(&display, WIDTH, HEIGHT, false, DISPLAY_ADDR, I2C_PORT);
+    ssd1306_config(&display);
+    ssd1306_send_data(&display);
+
+    // Limpa o display
+    ssd1306_fill(&display, false);
+    ssd1306_send_data(&display);
+
+    char buffer_info[64]; // Buffer para informações do display
+
+    while (true)
+    {
+        ssd1306_draw_string(&display, "Oi, eu sou o display", 0, 0); // para debbug
+        ssd1306_send_data(&display);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void vMatrizControlTask(void *params)
+{
+    npInit(7); // Inicializa a matriz de LEDs RGB no pino 7
+    while (true)
+    {
+        npSetRow(0, COLOR_VIOLET);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void vBuzzerControlTask(void *params)
+{
+    inicializar_buzzer(BUZZER_PIN); // Inicializa o buzzer no pino definido
+    while (true)
+    {
+        ativar_buzzer(BUZZER_PIN);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        desativar_buzzer(BUZZER_PIN);
     }
 }
