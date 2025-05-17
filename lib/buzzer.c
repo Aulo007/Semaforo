@@ -20,6 +20,11 @@ void ativar_buzzer(uint pino)
     pwm_set_gpio_level(pino, 2048); // 50% duty cycle
 }
 
+void ativar_buzzer_com_intensidade(uint pino, float intensidade)
+{
+    pwm_set_gpio_level(pino, (int)(intensidade * 4096));
+}
+
 void desativar_buzzer(uint pino)
 {
     pwm_set_gpio_level(pino, 0); // Desliga o buzzer

@@ -38,6 +38,8 @@ volatile int contador = 10;
 // Função para controlar estado em que o sistema se encontra.
 volatile uint8_t mode = 0;
 
+volatile bool buzzer_ativo = false;
+
 QueueHandle_t xQueueJoystickData;
 QueueHandle_t xQueueSensorDataDisplay;
 QueueHandle_t xQueueSensorDataMatriz;
@@ -181,6 +183,7 @@ void vConvertTask(void *params)
                sensor_data.rain_level);
         xQueueSend(xQueueSensorDataDisplay, &sensor_data, portMAX_DELAY);
         xQueueSend(xQueueSensorDataMatriz, &sensor_data, portMAX_DELAY);
+        xQueueSend(xQueueSensorDataBuzzer, &sensor_data, portMAX_DELAY);
     }
 }
 
@@ -257,17 +260,53 @@ void vBuzzerControlTask(void *params)
 {
     inicializar_buzzer(BUZZER_PIN); // Inicializa o buzzer no pino especificado
     sensor_data_t sensor_data;
+    absolute_time_t next_water_buzz = get_absolute_time(); // Próximo tempo para buzinar (nível de água)
+    absolute_time_t next_rain_buzz = get_absolute_time();  // Próximo tempo para buzinar (nível de chuva)
+    absolute_time_t buzzer_off_time = nil_time;            // Quando desativar o buzzer
+    bool buzzer_ativo = false;                             // Estado do buzzer
 
-    while (xQueueReceive(xQueueSensorDataMatriz, &sensor_data, portMAX_DELAY) == pdPASS)
+    while (true)
     {
-        if (sensor_data.water_level >= 70.0f || sensor_data.rain_level >= 80.0f)
+        // Recebe dados da fila (bloqueia até receber)
+        if (xQueueReceive(xQueueSensorDataBuzzer, &sensor_data, portMAX_DELAY) == pdPASS)
         {
-            ativar_buzzer(BUZZER_PIN); // Ativa o buzzer
+            // Verifica se as condições para ativar o buzzer são atendidas
+            if (sensor_data.water_level >= 70.0f || sensor_data.rain_level >= 80.0f)
+            {
+                // Verifica se é hora de ativar o buzzer para nível de água
+                if (sensor_data.water_level >= 70.0f && 
+                    absolute_time_diff_us(get_absolute_time(), next_water_buzz) <= 0 && 
+                    !buzzer_ativo)
+                {
+                    ativar_buzzer_com_intensidade(BUZZER_PIN, sensor_data.water_level / 100.0f);
+                    buzzer_ativo = true;
+                    buzzer_off_time = make_timeout_time_ms(50); // Buzzer ativo por 50ms
+                    next_water_buzz = make_timeout_time_ms(100); // Próximo buzz em 100ms
+                }
+                // Verifica se é hora de ativar o buzzer para nível de chuva
+                if (sensor_data.rain_level >= 80.0f && 
+                    absolute_time_diff_us(get_absolute_time(), next_rain_buzz) <= 0 && 
+                    !buzzer_ativo)
+                {
+                    ativar_buzzer_com_intensidade(BUZZER_PIN, sensor_data.rain_level / 100.0f);
+                    buzzer_ativo = true;
+                    buzzer_off_time = make_timeout_time_ms(50); // Buzzer ativo por 50ms
+                    next_rain_buzz = make_timeout_time_ms(200); // Próximo buzz em 200ms
+                }
+            }
+            else
+            {
+                // Desativa o buzzer se as condições não são atendidas
+                desativar_buzzer(BUZZER_PIN);
+                buzzer_ativo = false;
+            }
         }
-        else
+
+        // Desativa o buzzer após o tempo definido (50ms)
+        if (buzzer_ativo && absolute_time_diff_us(get_absolute_time(), buzzer_off_time) <= 0)
         {
-            desativar_buzzer(BUZZER_PIN); // Desativa o buzzer
+            desativar_buzzer(BUZZER_PIN);
+            buzzer_ativo = false;
         }
     }
 }
-  
