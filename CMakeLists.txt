@@ -35,6 +35,7 @@ add_executable(${PROJECT_NAME}
     lib/leds.c
     extras/bitmaps.c
     extras/Desenho.c
+    lib/leds.c
     lib/matrizRGB.c # Biblioteca para o display OLED
 )
 

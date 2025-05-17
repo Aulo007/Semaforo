@@ -14,6 +14,7 @@
 #include "buzzer.h"
 #include "extras/Desenho.h"
 #include "math.h"
+#include "lib/leds.h"
 
 #define ADC_JOYSTICK_X 26
 #define ADC_JOYSTICK_Y 27
@@ -45,6 +46,7 @@ QueueHandle_t xQueueJoystickData;
 QueueHandle_t xQueueSensorDataDisplay;
 QueueHandle_t xQueueSensorDataMatriz;
 QueueHandle_t xQueueSensorDataBuzzer;
+QueueHandle_t xQueueSensorLeds;
 
 typedef enum
 {
@@ -73,6 +75,7 @@ typedef struct
 
 void vJoystickTask(void *params);
 void vConvertTask(void *params);
+void vLedControlTask(void *params);
 void vDisplayControlTask(void *params);
 void vMatrizControlTask(void *params);
 void vBuzzerControlTask(void *params);
@@ -93,6 +96,7 @@ int main()
     xQueueSensorDataDisplay = xQueueCreate(10, sizeof(sensor_data_t));
     xQueueSensorDataMatriz = xQueueCreate(10, sizeof(sensor_data_t));
     xQueueSensorDataBuzzer = xQueueCreate(10, sizeof(sensor_data_t));
+    xQueueSensorLeds = xQueueCreate(10, sizeof(sensor_data_t));
 
     // Criação das tasks
     xTaskCreate(vJoystickTask, "Joystick Task", 256, NULL, 1, NULL);
@@ -100,23 +104,13 @@ int main()
     xTaskCreate(vDisplayControlTask, "Display Control Task", 256, NULL, 1, NULL);
     xTaskCreate(vMatrizControlTask, "Matriz Control Task", 256, NULL, 1, NULL);
     xTaskCreate(vBuzzerControlTask, "Buzzer Control Task", 256, NULL, 1, NULL);
+    xTaskCreate(vLedControlTask, "Led Control Task", 256, NULL, 1, NULL);
 
     // Inicia o agendador
     vTaskStartScheduler();
     panic_unsupported();
 }
 
-void vManagerTask(void *params)
-{
-    while (true)
-    {
-        if (mode == 0)
-        {
-            printf("oi\n");
-            vTaskDelay(pdMS_TO_TICKS(1000)); // Aguarda 1 segundo
-        }
-    }
-}
 void vJoystickTask(void *params)
 {
     adc_gpio_init(ADC_JOYSTICK_X);
@@ -193,6 +187,24 @@ void vConvertTask(void *params)
         xQueueSend(xQueueSensorDataDisplay, &sensor_data, portMAX_DELAY);
         xQueueSend(xQueueSensorDataMatriz, &sensor_data, portMAX_DELAY);
         xQueueSend(xQueueSensorDataBuzzer, &sensor_data, portMAX_DELAY);
+        xQueueSend(xQueueSensorLeds, &sensor_data, portMAX_DELAY);
+    }
+}
+
+void vLedControlTask(void *params)
+{
+    led_init();
+    sensor_data_t sensor_data;
+    while (xQueueReceive(xQueueSensorLeds, &sensor_data, portMAX_DELAY) == pdPASS)
+    {
+        if (sensor_data.water_level >= 70.0f || sensor_data.rain_level >= 80.0f)
+        {
+            acender_led_rgb(255 * (sensor_data.water_level / 100), 0, 0);
+        }
+        else
+        {
+            turn_off_leds();
+        }
     }
 }
 
