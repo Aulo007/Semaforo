@@ -13,6 +13,7 @@
 #include "lib/matrizRGB.h"
 #include "buzzer.h"
 #include "extras/Desenho.h"
+#include "math.h"
 
 #define ADC_JOYSTICK_X 26
 #define ADC_JOYSTICK_Y 27
@@ -44,6 +45,14 @@ QueueHandle_t xQueueJoystickData;
 QueueHandle_t xQueueSensorDataDisplay;
 QueueHandle_t xQueueSensorDataMatriz;
 QueueHandle_t xQueueSensorDataBuzzer;
+
+typedef enum
+{
+    STATE_STABLE,         // Água e chuva estáveis
+    STATE_WATER_OVERFLOW, // Água transbordando
+    STATE_HEAVY_RAIN,     // Chuva forte
+    STATE_BOTH_CRITICAL   // Água transbordando e chuva forte
+} display_state_t;
 
 void gpio_irq_handler(uint gpio, uint32_t events)
 {
@@ -191,8 +200,6 @@ void vDisplayControlTask(void *params)
 {
     // Inicialização do I2C
     i2c_init(I2C_PORT, 400 * 1000); // Configuração para 400kHz
-
-    // Configuração dos pinos I2C
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_SDA);
@@ -202,32 +209,89 @@ void vDisplayControlTask(void *params)
     ssd1306_t display;
     ssd1306_init(&display, WIDTH, HEIGHT, false, DISPLAY_ADDR, I2C_PORT);
     ssd1306_config(&display);
+    ssd1306_fill(&display, false); // Limpa o display na inicialização
     ssd1306_send_data(&display);
 
-    // Limpa o display
-    ssd1306_fill(&display, false);
-    ssd1306_send_data(&display);
-
-    char buffer_info[64]; // Buffer para informações do display
+    // Variáveis de controle
     sensor_data_t sensor_data;
+    display_state_t current_state = STATE_STABLE;
+    display_state_t last_state = STATE_STABLE;
+    float last_water_level = -1.0f; // Valor inicial inválido para forçar primeira atualização
+    float last_rain_level = -1.0f;
+    char buffer_info[64];
+    absolute_time_t repeat_time = make_timeout_time_ms(50);
 
-    absolute_time_t repeat_time = make_timeout_time_ms(50); // 1 segundo
-
-    while (xQueueReceive(xQueueSensorDataDisplay, &sensor_data, portMAX_DELAY) == pdPASS) //
+    while (true)
     {
-        if (time_reached(repeat_time))
+        // Recebe dados da fila
+        if (xQueueReceive(xQueueSensorDataDisplay, &sensor_data, portMAX_DELAY) == pdPASS)
         {
-            repeat_time = make_timeout_time_ms(50); // Atualiza o tempo de repetição
-            sprintf(buffer_info, "Agua: %.1f%%", sensor_data.water_level);
-            ssd1306_draw_string(&display, buffer_info, 0, 0);
+            // Determina o estado atual
+            if (sensor_data.water_level >= 70.0f && sensor_data.rain_level >= 80.0f)
+                current_state = STATE_BOTH_CRITICAL;
+            else if (sensor_data.water_level >= 70.0f)
+                current_state = STATE_WATER_OVERFLOW;
+            else if (sensor_data.rain_level >= 80.0f)
+                current_state = STATE_HEAVY_RAIN;
+            else
+                current_state = STATE_STABLE;
 
-            sprintf(buffer_info, "Chuva: %.1f%%", sensor_data.rain_level);
-            ssd1306_draw_string(&display, buffer_info, 0, 20);
+            // Verifica se é hora de atualizar o display
+            if (time_reached(repeat_time))
+            {
+                repeat_time = make_timeout_time_ms(50);
 
-            ssd1306_send_data(&display);
+                // Verifica se houve mudança de estado ou valores significativos
+                bool update_needed = (current_state != last_state ||
+                                      fabs(sensor_data.water_level - last_water_level) >= 0.1f ||
+                                      fabs(sensor_data.rain_level - last_rain_level) >= 0.1f);
+
+                if (update_needed)
+                {
+                    // Limpa o display apenas se o estado mudou
+                    if (current_state != last_state)
+                        ssd1306_fill(&display, false);
+
+                    // Atualiza valores numéricos (água e chuva)
+                    sprintf(buffer_info, "Agua: %.1f%%", sensor_data.water_level);
+                    ssd1306_draw_string(&display, buffer_info, 0, 0);
+
+                    sprintf(buffer_info, "Chuva: %.1f%%", sensor_data.rain_level);
+                    ssd1306_draw_string(&display, buffer_info, 0, 20);
+
+                    // Exibe mensagens de estado
+                    switch (current_state)
+                    {
+                    case STATE_STABLE:
+                        ssd1306_draw_string(&display, "Agua estavel", 0, 30);
+                        ssd1306_draw_string(&display, "Chuva estavel", 0, 50);
+                        break;
+                    case STATE_WATER_OVERFLOW:
+                        ssd1306_draw_string(&display, "Transbordando", 0, 30);
+                        ssd1306_draw_string(&display, "Chuva estavel", 0, 50);
+                        break;
+                    case STATE_HEAVY_RAIN:
+                        ssd1306_draw_string(&display, "Agua estavel", 0, 30);
+                        ssd1306_draw_string(&display, "Chuva forte", 0, 50);
+                        break;
+                    case STATE_BOTH_CRITICAL:
+                        ssd1306_draw_string(&display, "Transbordando", 0, 30);
+                        ssd1306_draw_string(&display, "Chuva forte", 0, 50);
+                        break;
+                    }
+
+                    // Envia dados para o display
+                    ssd1306_send_data(&display);
+
+                    // Atualiza valores e estado anteriores
+                    last_water_level = sensor_data.water_level;
+                    last_rain_level = sensor_data.rain_level;
+                    last_state = current_state;
+                }
+            }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(15)); // Pequena pausa para outras tarefas
     }
 }
 
@@ -274,18 +338,18 @@ void vBuzzerControlTask(void *params)
             if (sensor_data.water_level >= 70.0f || sensor_data.rain_level >= 80.0f)
             {
                 // Verifica se é hora de ativar o buzzer para nível de água
-                if (sensor_data.water_level >= 70.0f && 
-                    absolute_time_diff_us(get_absolute_time(), next_water_buzz) <= 0 && 
+                if (sensor_data.water_level >= 70.0f &&
+                    absolute_time_diff_us(get_absolute_time(), next_water_buzz) <= 0 &&
                     !buzzer_ativo)
                 {
                     ativar_buzzer_com_intensidade(BUZZER_PIN, sensor_data.water_level / 100.0f);
                     buzzer_ativo = true;
-                    buzzer_off_time = make_timeout_time_ms(50); // Buzzer ativo por 50ms
+                    buzzer_off_time = make_timeout_time_ms(50);  // Buzzer ativo por 50ms
                     next_water_buzz = make_timeout_time_ms(100); // Próximo buzz em 100ms
                 }
                 // Verifica se é hora de ativar o buzzer para nível de chuva
-                if (sensor_data.rain_level >= 80.0f && 
-                    absolute_time_diff_us(get_absolute_time(), next_rain_buzz) <= 0 && 
+                if (sensor_data.rain_level >= 80.0f &&
+                    absolute_time_diff_us(get_absolute_time(), next_rain_buzz) <= 0 &&
                     !buzzer_ativo)
                 {
                     ativar_buzzer_com_intensidade(BUZZER_PIN, sensor_data.rain_level / 100.0f);
