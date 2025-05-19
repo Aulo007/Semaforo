@@ -71,7 +71,7 @@ typedef enum
  */
 typedef enum
 {
-    TEMPO_VERDE = 5000,    // Duração do sinal verde
+    TEMPO_VERDE = 10000,    // Duração do sinal verde
     TEMPO_AMARELO = 2000,  // Duração do sinal vermelho
     TEMPO_VERMELHO = 5000, // Duração do sinal amarelo
 } TempoEstadoNormal;
@@ -81,7 +81,7 @@ typedef enum
  */
 typedef enum
 {
-    DURACAO_BUZZER_VERDE = 100,    // Duração do beep no estado verde
+    DURACAO_BUZZER_VERDE = 1000,   // Duração do beep no estado verde
     DURACAO_BUZZER_AMARELO = 100,  // Duração do beep no estado amarelo
     DURACAO_BUZZER_VERMELHO = 500, // Duração do beep no estado vermelho
     DURACAO_BUZZER_NOTURNO = 1500, // Duração do beep no modo noturno
@@ -92,10 +92,13 @@ typedef enum
  */
 typedef enum
 {
-    INTERVALO_BUZZER_VERDE = 1000,    // Intervalo entre beeps no verde
-    INTERVALO_BUZZER_AMARELO = 100,   // Intervalo entre beeps no amarelo
-    INTERVALO_BUZZER_VERMELHO = 1500, // Intervalo entre beeps no vermelho
-    INTERVALO_BUZZER_NOTURNO = 500,   // Intervalo entre beeps no modo noturno
+    // Intervalos entre beeps para cada estado
+    // O valor é o tempo adicional, por exemplo, o + 1000 significa que o intervalo é 1000.
+
+    INTERVALO_BUZZER_VERDE = DURACAO_BUZZER_VERDE + 1000,       // Intervalo entre beeps no verde
+    INTERVALO_BUZZER_AMARELO = DURACAO_BUZZER_AMARELO + 100,    // Intervalo entre beeps no amarelo
+    INTERVALO_BUZZER_VERMELHO = DURACAO_BUZZER_VERMELHO + 1500, // Intervalo entre beeps no vermelho
+    INTERVALO_BUZZER_NOTURNO = DURACAO_BUZZER_NOTURNO + 500,    // Intervalo entre beeps no modo noturno
 } IntervaloBuzzer;
 
 /**
@@ -233,17 +236,23 @@ void vTarefaControleSemaforo()
  * @brief Task para controle do buzzer
  *
  * Esta tarefa gerencia os sinais sonoros do buzzer, sincronizados
- * com os estados do semáforo o te
+ * com os estados do semáforo, usando o sistema de temporização
+ * baseado no tempo global.
+ */
 void vTarefaControleBuzzer()
 {
     inicializar_buzzer(BUZZER_PIN); // Inicializa o buzzer no pino especificado
     // Inicializa variáveis de controle
     tempo_ultimo_beep = tempo_global;
-    buzzer_ativo = false;
+    int contador = 1;
+
+    // Ativa o buzzer inicialmente
+    ativar_buzzer(BUZZER_PIN);
+    buzzer_ativo = true;
 
     while (true)
     {
-        // Modo normal
+
         if (modo_atual == MODO_NORMAL)
         {
             switch (estado_atual)
@@ -423,12 +432,12 @@ void vTarefaControleMatriz()
 {
     // Inicializa a matriz de LEDs RGB no pino 7
     npInit(7);
-    
+
     // Inicializa contadores para evitar problemas de memória
     contador_ciclo_imagens = 0;
     contador_ciclo_imagens_verde = 0;
     contador_ciclo_imagens_vermelho = 10;
-    
+
     while (true)
     {
         switch (estado_atual)
@@ -440,17 +449,17 @@ void vTarefaControleMatriz()
                 npClear();
                 contador_ciclo_imagens = 0;
             }
-            
+
             // Exibe o frame atual da animação verde
             npSetMatrixWithIntensity(caixa_de_desenhos[contador_ciclo_imagens_verde], 1);
-            
+
             // Avança para o próximo frame da animação, ciclo de 0-9
             contador_ciclo_imagens_verde = (contador_ciclo_imagens_verde + 1) % 10;
-            
+
             // Aguarda antes do próximo frame
             vTaskDelay(pdMS_TO_TICKS(38));
             break;
-            
+
         case ESTADO_AMARELO:
             // Limpa a matriz ao entrar no estado amarelo pela primeira vez
             if (contador_ciclo_imagens != 1)
@@ -458,14 +467,14 @@ void vTarefaControleMatriz()
                 npClear();
                 contador_ciclo_imagens = 1;
             }
-            
+
             vTaskDelay(pdMS_TO_TICKS(38));
             npSetMatrixWithIntensity(caixa_de_desenhos[22], 1);
-            
+
             // Aguarda antes da próxima atualização
             vTaskDelay(pdMS_TO_TICKS(38));
             break;
-            
+
         case ESTADO_VERMELHO:
             // Limpa a matriz ao entrar no estado vermelho pela primeira vez
             if (contador_ciclo_imagens != 2)
@@ -473,19 +482,19 @@ void vTarefaControleMatriz()
                 npClear();
                 contador_ciclo_imagens = 2;
             }
-            
+
             // Exibe o frame atual da animação vermelha
             npSetMatrixWithIntensity(caixa_de_desenhos[contador_ciclo_imagens_vermelho], 1);
-            
+
             // Avança para o próximo frame da animação, ciclo de 10-22
             contador_ciclo_imagens_vermelho++;
             if (contador_ciclo_imagens_vermelho >= 22)
                 contador_ciclo_imagens_vermelho = 10;
-            
+
             // Aguarda antes do próximo frame
             vTaskDelay(pdMS_TO_TICKS(38));
             break;
-            
+
         case ESTADO_AMARELO_NOTURNO:
             // Limpa a matriz ao entrar no estado noturno pela primeira vez
             if (contador_ciclo_imagens != 3)
@@ -493,20 +502,20 @@ void vTarefaControleMatriz()
                 npClear();
                 contador_ciclo_imagens = 3;
             }
-            
+
             // Sincroniza com o estado do LED amarelo
             // Em ESTADO_AMARELO_NOTURNO o LED estará aceso
             npSetMatrixWithIntensity(caixa_de_desenhos[22], 1);
             vTaskDelay(pdMS_TO_TICKS(38));
             break;
-            
+
         case ESTADO_DESLIGADO:
             // No modo noturno quando o LED está desligado
             // Garantimos que a matriz também esteja desligada
             npClear();
             vTaskDelay(pdMS_TO_TICKS(38));
             break;
-            
+
         default:
             // Caso de segurança para estados desconhecidos
             npClear();
