@@ -16,7 +16,6 @@ include_directories(${CMAKE_SOURCE_DIR}/lib)
 
 add_executable(${PROJECT_NAME}
     Semaforo.c
-    lib/buzzer.c
     lib/ssd1306.c
     lib/leds.c
     extras/bitmaps.c
